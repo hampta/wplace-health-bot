@@ -2,6 +2,7 @@ import os
 import time
 import json
 import requests
+import cloudscraper
 
 from dotenv import load_dotenv
 
@@ -39,6 +40,9 @@ session.headers.update(
         "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
     }
 )
+
+# Create a cloudscraper instance
+scraper = cloudscraper.create_scraper()  # returns a CloudScraper instance
 
 def save_health_data(data):
     """Save health data to a JSON file."""
@@ -85,14 +89,16 @@ def telegram_sendMessage(text: str, chat_id: str, notify=True):
         },
     )
 
-# check health of the backend
+# check health of the backend with up to 5 tries
 def check_health():
     try:
-        response = session.get(HEALTH_URL, timeout=10, allow_redirects=True)
+        response = scraper.get(HEALTH_URL, timeout=10, allow_redirects=True)
+        response.raise_for_status()  # raise an error for bad responses
         print(f"Health check response: {response.status_code}")
         return response.status_code
-    except requests.exceptions.RequestException as e:
-        return f"Error checking backend health: {e}"
+    except requests.RequestException as e:
+        print(f"Health check failed: {e}")
+        return 500
 
 
 # main function to run the health check and send a message
