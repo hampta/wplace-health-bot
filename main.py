@@ -3,6 +3,8 @@ import time
 import json
 import requests
 
+from http.cookiejar import MozillaCookieJar
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -11,6 +13,7 @@ load_dotenv()
 HEALTH_URL = "https://backend.wplace.live/health"
 HEALTH_CHECK_INTERVAL = int(os.environ.get("HEALTH_CHECK_INTERVAL", 15))
 HEALTH_DATA_FILE = "health_data.json"
+COOKIES_FILE = "cookies.txt"
 
 # TELEGRAM API configuration
 TELEGRAM_API = "https://api.telegram.org/bot{token}/{method}".format
@@ -25,6 +28,18 @@ AVATAR_URL = os.environ.get("AVATAR_URL")
 # ensure the environment variables are set
 if not WEBHOOK_URL or not PING_ROLE_ID or not TELEGRAM_ACCESS_TOKEN or not TELEGRAM_CHAT_ID:
     raise ValueError("WEBHOOK_URL, PING_ROLE_ID, TELEGRAM_ACCESS_TOKEN, and TELEGRAM_CHAT_ID must be set in the .env file.")
+
+session = requests.Session()
+session.headers.update({
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"
+})
+
+def load_cookies():
+    """Load cookies from the cookies.txt file into the global session"""
+    cookie_jar = MozillaCookieJar(COOKIES_FILE)
+    cookie_jar.load(ignore_discard=True, ignore_expires=True)
+    session.cookies.update(cookie_jar)
+    return cookie_jar
 
 
 def save_health_data(data):
@@ -76,9 +91,8 @@ def telegram_sendMessage(text: str, chat_id: str, notify=True):
 # check health of the backend
 def check_health():
     try:
-        response = requests.get(HEALTH_URL)
+        response = session.get(HEALTH_URL)
         if response.status_code == 200:
-            print(response.text)
             return True
         else:
             return False
@@ -125,4 +139,5 @@ def main():
 
 
 if __name__ == "__main__":
+    load_cookies()
     main()
