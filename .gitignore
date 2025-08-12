@@ -160,3 +160,4 @@ cython_debug/
 #.idea/
 
 health_data.json
+cookies.txt
