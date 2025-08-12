@@ -3,8 +3,6 @@ import time
 import json
 import requests
 
-from http.cookiejar import MozillaCookieJar
-
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -13,7 +11,6 @@ load_dotenv()
 HEALTH_URL = "https://backend.wplace.live/health"
 HEALTH_CHECK_INTERVAL = int(os.environ.get("HEALTH_CHECK_INTERVAL", 15))
 HEALTH_DATA_FILE = "health_data.json"
-COOKIES_FILE = "cookies.txt"
 
 # TELEGRAM API configuration
 TELEGRAM_API = "https://api.telegram.org/bot{token}/{method}".format
@@ -26,21 +23,22 @@ PING_ROLE_ID = os.environ.get("PING_ROLE_ID")
 AVATAR_URL = os.environ.get("AVATAR_URL")
 
 # ensure the environment variables are set
-if not WEBHOOK_URL or not PING_ROLE_ID or not TELEGRAM_ACCESS_TOKEN or not TELEGRAM_CHAT_ID:
-    raise ValueError("WEBHOOK_URL, PING_ROLE_ID, TELEGRAM_ACCESS_TOKEN, and TELEGRAM_CHAT_ID must be set in the .env file.")
+if (
+    not WEBHOOK_URL
+    or not PING_ROLE_ID
+    or not TELEGRAM_ACCESS_TOKEN
+    or not TELEGRAM_CHAT_ID
+):
+    raise ValueError(
+        "WEBHOOK_URL, PING_ROLE_ID, TELEGRAM_ACCESS_TOKEN, and TELEGRAM_CHAT_ID must be set in the .env file."
+    )
 
 session = requests.Session()
-session.headers.update({
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"
-})
-
-def load_cookies():
-    """Load cookies from the cookies.txt file into the global session"""
-    cookie_jar = MozillaCookieJar(COOKIES_FILE)
-    cookie_jar.load(ignore_discard=True, ignore_expires=True)
-    session.cookies.update(cookie_jar)
-    return cookie_jar
-
+session.headers.update(
+    {
+        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
+    }
+)
 
 def save_health_data(data):
     """Save health data to a JSON file."""
@@ -87,15 +85,12 @@ def telegram_sendMessage(text: str, chat_id: str, notify=True):
         },
     )
 
-
 # check health of the backend
 def check_health():
     try:
-        response = session.get(HEALTH_URL)
-        if response.status_code == 200:
-            return True
-        else:
-            return False
+        response = session.get(HEALTH_URL, timeout=10, allow_redirects=True)
+        print(f"Health check response: {response.status_code}")
+        return response.status_code
     except requests.exceptions.RequestException as e:
         return f"Error checking backend health: {e}"
 
@@ -107,10 +102,13 @@ def main():
         health_data = load_health_data()
         # send message if health status has changed
         prev_status = health_data.get("status")
-        curr_status = "UP" if health_status else "DOWN"
+        prev_status_code = health_data.get("health_check_response", 0)
+        curr_status = "UP" if health_status == 200 else "DOWN"
 
-        if prev_status != curr_status or prev_status == "UNKNOWN":
-            content = f"{'🟢' if curr_status == 'UP' else '🔴'} The backend is {curr_status}!"
+        if curr_status != prev_status or prev_status_code == 0:
+            content = (
+                f"{'🟢' if curr_status == 'UP' else '🔴'} The backend is {curr_status}! (Status code: {health_status})"
+            )
         else:
             time.sleep(HEALTH_CHECK_INTERVAL)
             continue
@@ -123,21 +121,25 @@ def main():
                 notify=True,
             )
         else:
-            print("Telegram chat ID or access token is not set. Skipping Telegram notification.")
+            print(
+                "Telegram chat ID or access token is not set. Skipping Telegram notification."
+            )
         if response.status_code == 204:
             print("Webhook message sent successfully.")
         else:
             print(
                 f"Failed to send webhook message. Status code: {response.status_code}"
             )
-        save_health_data({
-            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-            "status": curr_status,
-        })
+        save_health_data(
+            {
+                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "status": curr_status,
+                "health_check_response": health_status,
+            }
+        )
         # Wait for a specified interval before the next check
         time.sleep(HEALTH_CHECK_INTERVAL)
 
 
 if __name__ == "__main__":
-    load_cookies()
     main()
