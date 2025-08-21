@@ -37,12 +37,13 @@ if (
 session = requests.Session()
 session.headers.update(
     {
-        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
+        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
     }
 )
 
 # Create a cloudscraper instance
 scraper = cloudscraper.create_scraper()  # returns a CloudScraper instance
+
 
 def save_health_data(data):
     """Save health data to a JSON file."""
@@ -78,16 +79,18 @@ def telegram_command(name, data):
     if r.status_code != 200:
         print(f"Telegram API error: {r.status_code} - {r.text}")
 
+
 def telegram_sendMessage(text: str, chat_id: str, notify=True):
     return telegram_command(
         "sendMessage",
         {
             "text": text,
             "chat_id": chat_id,
-            "parse_mode": "markdown",
+            "parse_mode": "html",
             "disable_notification": not notify,
         },
     )
+
 
 # check health of the backend with up to 5 tries
 def check_health():
@@ -97,7 +100,9 @@ def check_health():
         print(f"Health check response: {response.status_code}")
         return response.status_code
     except requests.RequestException as e:
-        print(f"Health check failed: {e}")
+        if e.response is not None:
+            print(f"Health check failed: {e.response.status_code}")
+            return e.response.status_code
         return 500
 
 
@@ -109,20 +114,40 @@ def main():
         # send message if health status has changed
         prev_status = health_data.get("status")
         prev_status_code = health_data.get("health_check_response", 0)
+
+        curr_timestamp = time.time()
+        prev_timestamp = health_data.get("timestamp", 0)
+        time_diff_seconds = curr_timestamp - prev_timestamp
+        days = int(time_diff_seconds // 86400)
+        remaining_seconds = time_diff_seconds % 86400
+        time_part = time.strftime(
+            "%H hours %M min. %S sec.", time.gmtime(remaining_seconds)
+        )
+        time_diff = f"{days} days, {time_part}" if days > 0 else time_part
+
         curr_status = "UP" if health_status == 200 else "DOWN"
 
         if curr_status != prev_status or prev_status_code == 0:
-            content = (
-                f"{'🟢' if curr_status == 'UP' else '🔴'} The backend is {curr_status}! (Status code: {health_status})"
+            telegram_message = (
+                f"<b>{'🟢' if curr_status == 'UP' else '🔴'} The backend is {curr_status}! </b>\n\n"
+                f"Status code: {health_status}\n"
+                f"<i>{'Downtime' if curr_status == 'UP' else 'Uptime'} {time_diff}</i>"
             )
+            discord_message = (
+                f"<@&{PING_ROLE_ID}> " if PING_ROLE_ID else ""
+                f"**{'🟢' if curr_status == 'UP' else '🔴'} The backend is {curr_status}!** \n\n"
+                f"Status code: {health_status}\n"
+                f"*{'Downtime' if curr_status == 'UP' else 'Uptime'} {time_diff}*"
+            )
+
         else:
             time.sleep(HEALTH_CHECK_INTERVAL)
             continue
 
-        response = send_webhook_message(f"{content} <@&{PING_ROLE_ID}>")
+        response = send_webhook_message(discord_message)
         if TELEGRAM_CHAT_ID and TELEGRAM_ACCESS_TOKEN:
             telegram_sendMessage(
-                text=content,
+                text=telegram_message,
                 chat_id=TELEGRAM_CHAT_ID,
                 notify=True,
             )
@@ -138,7 +163,7 @@ def main():
             )
         save_health_data(
             {
-                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "timestamp": curr_timestamp,
                 "status": curr_status,
                 "health_check_response": health_status,
             }
