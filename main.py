@@ -134,7 +134,7 @@ def main():
                 f"<i>{'Downtime' if curr_status == 'UP' else 'Uptime'} {time_diff}</i>"
             )
             discord_message = (
-                f"<@&{PING_ROLE_ID}> " if PING_ROLE_ID else ""
+                f"<@&{PING_ROLE_ID}> \n"
                 f"**{'🟢' if curr_status == 'UP' else '🔴'} The backend is {curr_status}!** \n\n"
                 f"Status code: {health_status}\n"
                 f"*{'Downtime' if curr_status == 'UP' else 'Uptime'} {time_diff}*"
